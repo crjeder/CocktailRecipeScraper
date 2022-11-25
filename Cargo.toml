@@ -1,0 +1,15 @@
+[package]
+name = "cocktail_recipe_scraper"
+version = "0.1.0"
+authors = ["crjeder <crjeder@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+serde = {version = "1.0", features = ["derive"]}
+serde_json = "1.0"   # serialize json for drink recepies
+regex = "1.5"
+rgb = {version = "0.8", features = ["serde"]}
+quick-error = "2.0" # for custom errors
+
+[dev-dependencies]
+test-case = "2.2.2"
