@@ -116,7 +116,8 @@ impl SocialCocktails
                         Ingredient
                         {
                             name: cel.next().ok_or(LeosError::NotARecipe("no cell containging the name of liquid found".to_string()))?.text(),
-                            amount: value * factor
+                            amount: value * factor,
+                            coulour: None, 
                         }
                     );
                 },
@@ -230,17 +231,20 @@ mod tests
                     Ingredient
                     {
                         amount: 40,
-                        name: String::from("Tequila")
+                        name: String::from("Tequila"),
+                        coulour: None,
                     },
                     Ingredient
                     {
                         amount: 20,
                         name: String::from("Cointreau")
+                        coulour: None,
                     },
                     Ingredient
                     {
                         amount: 20,
                         name: String::from("Zitronensaft")
+                        coulour: None,
                     }
                 ],
                 garnish: Some(String::from("Zitronenviertel")),
