@@ -2,13 +2,12 @@
 // Generic Cocktail for cocktail_bot_hal
 
 use regex::Regex;
+use rgb::RGB8;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::str::FromStr;
-use rgb::{RGB8};
-use serde::{Deserialize, Serialize};
 
-pub trait GenericCocktail
-{
+pub trait GenericCocktail {
     fn convert_to(&self) -> Result<Cocktail, Box<dyn Error>>;
 }
 
@@ -17,6 +16,7 @@ quick_error! {
     pub enum ConversionError
     {
         IsNegative {}
+        IsZero {}
         IsToBig {}
         UnknownUnit(u: String) {}
     }
@@ -31,16 +31,16 @@ impl fmt::Display for ConversionError
 }
 */
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
-pub struct Ingredient
-{
+pub struct Ingredient {
     pub amount: u8, // in ml
     pub name: String,
     pub coulour: Option<RGB8>,
+    pub abv: u8,             // alcohol by volume in %
+    pub density: Option<u8>, // density in g / ml
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
-pub struct Cocktail
-{
+pub struct Cocktail {
     pub name: String,
     pub ingredients: Vec<Ingredient>,
     pub glass: Option<String>,
@@ -51,10 +51,8 @@ pub struct Cocktail
     pub coulour: Option<RGB8>,
 }
 
-impl Default for Cocktail
-{
-    fn default() -> Cocktail
-    {
+impl Default for Cocktail {
+    fn default() -> Cocktail {
         Cocktail {
             name: String::from("Empty Glass"),
             glass: Some(String::from("Any")),
@@ -76,26 +74,23 @@ impl Default for Cocktail
 /// examples:
 ///      1 1/2 oz
 ///        1/3 oz
-///      5.5 oz
+///      5.5 cl
 /// spaces before / after the slash are not allowed
 // (?:) denotes a non-capturing group
 // (?P<name>) denotes a named capure group
 //
-pub fn convert_measure(measure: &str) -> Result<u8, Box<dyn Error>>
-{
+pub fn convert_measure(measure: &str) -> Result<u8, Box<dyn Error>> {
     let res = f64::from_str(measure.trim()); // handle the "number only" case
-    if res.is_ok()
-    {
+    if res.is_ok() {
         let val = res.unwrap().round();
-        if val <= (u8::max_value() as f64)
-        {
+        if val <= (u8::max_value() as f64) {
             return Ok(val as u8);
-        }
-        else
-        {
+        } else {
             return Err(Box::new(ConversionError::IsToBig)); // value > u8:max_value
         }
-    };
+    }
+
+    // converting the str into a number did not work. So we need to parse the str
 
     let mut value: Option<f64> = None;
     let expr = Regex::new(
@@ -104,19 +99,21 @@ pub fn convert_measure(measure: &str) -> Result<u8, Box<dyn Error>>
 
     let captures = expr.captures(measure).unwrap(); // match regex
 
-    if captures.name("whole").is_some()
-    // check if capture group "whole" has matched
-    {
+    if captures.name("whole").is_some() {
+        // check if capture group "whole" has matched
         // add the whole number part to value
         value = Some(
-            captures.name("whole").unwrap().as_str().parse::<f64>().unwrap(),
+            captures
+                .name("whole")
+                .unwrap()
+                .as_str()
+                .parse::<f64>()
+                .unwrap(),
         );
     };
 
     // check if there is a fraction (numerator and denominator)
-    if captures.name("numerator").is_some()
-        && captures.name("denominator").is_some()
-    {
+    if captures.name("numerator").is_some() && captures.name("denominator").is_some() {
         // get numerator's and denominator's value
         let numerator = captures
             .name("numerator")
@@ -131,22 +128,26 @@ pub fn convert_measure(measure: &str) -> Result<u8, Box<dyn Error>>
             .parse::<f64>()
             .unwrap();
 
-        if denominator > 0.0
-        // don't divde by zero
-        {
+        if denominator > 0.0 {
+            // negative numbers make no sense
             value = Some(value.unwrap_or(0.0) + numerator / denominator); // add the value of the fractional part
-        };
+        } else if denominator == 0 {
+            // don't divde by zero
+            Err(Box::new(ConversionError::IsZero))
+        } else {
+            Err(Box::new(ConversionError::IsNegative))
+        }
     };
 
-    let mut conversion: f64 = 0.0; // the conversion factor from unit to ml
+    let mut conversion: f64 = 1.0; // the conversion factor from unit to ml; default 1 (ml)
 
     if captures.name("unit").is_some()
     // check if there is a match for unit
     {
         let unit = captures.name("unit").unwrap().as_str().to_lowercase();
 
-        conversion = match unit.as_str()
-        {
+        // note: values greater than 255 work only if the quantity is small enough e. g. 1/2 pint
+        conversion = match unit.as_str() {
             "oz" | "fl oz" | "ounces" => Ok(30.0),
             "ml" | "milliliters" => Ok(1.0),
             "cl" | "centiliters" => Ok(10.0),
@@ -156,48 +157,39 @@ pub fn convert_measure(measure: &str) -> Result<u8, Box<dyn Error>>
             "el" | "tablespoon" | "tablespoons" | "tbsp" => Ok(15.0),
             "shot" | "shots" => Ok(45.0),
             "can" => Ok(6.0 * 30.0),
-            "cup" | "cups" => Ok(240.0),
+            "cup" | "cups" | "tasse" => Ok(240.0),
             "pinch" => Ok(0.3),
-            "glass" | "glasses" => Ok(250.0),
+            "glass" | "glasses" | "glas" => Ok(250.0),
             "pint" => Ok(473.0),
             "mug" => Ok(355.0),
             "l" | "liter" | "liters" => Ok(1000.0),
+            "dose" => Ok(330.0),
             _ => Err(ConversionError::UnknownUnit(String::from(unit))),
         }?;
-    }
-    else
+    } else
     // no unit found => assume int's in ml
     {
         conversion = 1.0;
     }
 
-    if value.is_some()
-    {
-        if value.unwrap() < 0.0
-        {
+    if value.is_some() {
+        if value.unwrap() < 0.0 {
             return Err(Box::new(ConversionError::IsNegative));
         }
         if value.unwrap() * conversion <= (u8::max_value() as f64)
         // overflow
         {
             Ok(((value.unwrap() * conversion).round()) as u8) // converted to ml and return
-        }
-        else
-        {
+        } else {
             return Err(Box::new(ConversionError::IsToBig)); // value > u8:max_value
         }
-    }
-    else
-    {
-        return Ok(conversion.round() as u8); // unit without value is trated as
-                                             // one unit e. g. "oz" -> 1 oz = 30 ml
-                                             // returns 30
+    } else {
+        return Ok(conversion.round() as u8); // unit without value is treated as ml
     }
 }
 
 #[cfg(test)]
-mod tests
-{
+mod tests {
     use super::*;
     use test_case::test_case;
 
@@ -216,11 +208,12 @@ mod tests
     #[test_case("500" => 500; "Number only (to big)")]
     #[test_case("3oz" => 90; "Whole number and unit, no spaces")]
     // #[test_case("5oz" => 1inconclusive (); "no spaces")]
-    fn test_convert(s: &str) -> u8 { convert_measure(s).unwrap() }
+    fn test_convert(s: &str) -> u8 {
+        convert_measure(s).unwrap()
+    }
 
     #[test]
-    fn from_str()
-    {
+    fn from_str() {
         let _screwdriver: Cocktail = serde_json::from_str(
             r#"
                 {
