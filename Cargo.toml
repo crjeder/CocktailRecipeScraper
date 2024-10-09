@@ -16,6 +16,7 @@ quick-error = "2.0" # for custom errors
 # The generated code makes it impossible to instantiate a value 
 # without passing the checks. It works this way even with 
 # serde deserialization.
+# fraction = "0.15.3" # Lossless fractions and decimals; drop-in float replacement
 
 [dev-dependencies]
 test-case = "2.2.2"
