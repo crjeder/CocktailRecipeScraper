@@ -10,6 +10,12 @@ serde_json = "1.0"   # serialize json for drink recepies
 regex = "1.5"
 rgb = {version = "0.8", features = ["serde"]}
 quick-error = "2.0" # for custom errors
+# nutype = "0.5.0" 
+# Nutype is a proc macro that allows adding extra constraints 
+# like sanitization and validation to the regular newtype pattern. 
+# The generated code makes it impossible to instantiate a value 
+# without passing the checks. It works this way even with 
+# serde deserialization.
 
 [dev-dependencies]
 test-case = "2.2.2"
